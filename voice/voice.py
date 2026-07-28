@@ -13,7 +13,16 @@ import re
 import torch
 import sounddevice as sd
 
+import websocket
+
+ws = websocket.WebSocket()
+ws.connect("ws://localhost:8080")
+
+# Tell Node this is the audio producer
+ws.send("python")
+
 os.environ["PULSE_SINK"] = "null-sink"
+
 
 def create_wav_file(model, text: str, output_dir: str) -> None:
     # 1. Split the text into sentences (looks for ., !, or ? followed by a space)
@@ -68,28 +77,28 @@ def tune_cfg_weight(exaggeration: float) -> float:
 
 def stream_audio(model, text: str, output_device=None) -> None:
     sentences = re.split(r"(?<=[.!?])\s+", text.strip())
-    
+
     # 1. Create a queue to hold the generated audio arrays
     audio_queue = queue.Queue()
-    
+
     # 2. Define a worker function that will run in the background
     def playback_worker():
         while True:
             # Wait for the next audio chunk to appear in the queue
             audio_chunk = audio_queue.get()
-            
+
             # If we receive None, it means generation is finished
             if audio_chunk is None:
                 audio_queue.task_done()
                 break
-                
+
             # Play the chunk
             sd.play(audio_chunk, samplerate=model.sr, device=output_device)
-            sd.wait() # This only blocks the playback thread now!
-            
+            sd.wait()  # This only blocks the playback thread now!
+
             # Sleep for 0.1 seconds to create the pause between sentences
             time.sleep(0.1)
-            
+
             # Mark this chunk as finished
             audio_queue.task_done()
 
@@ -113,7 +122,7 @@ def stream_audio(model, text: str, output_device=None) -> None:
             sentence,
             audio_prompt_path="./voice/voice.mp3",
         )
-        
+
         # sys.stdout = original_stdout
         # sys.stderr = original_stderr
 
@@ -125,13 +134,47 @@ def stream_audio(model, text: str, output_device=None) -> None:
 
     # 5. Tell the player thread that there are no more sentences coming
     audio_queue.put(None)
-    
+
     print("Generation complete! Waiting for playback to finish...")
-    
+
     # 6. Keep the script alive until the player thread finishes emptying the queue
     audio_queue.join()
     player_thread.join()
     print("Done!")
+
+
+def stream_audio_to_server(model, text: str) -> None:
+    sentences = re.split(r"(?<=[.!?])\s+", text.strip())
+    print('samplerate', model.sr)
+    for sentence in sentences:
+        if not sentence.strip():
+            continue
+
+        print(f"Generating: {sentence}")
+
+        wav = model.generate(
+            sentence,
+            audio_prompt_path="./voice/voice.mp3",
+        )
+
+        # wav shape: [1, samples]
+        audio_np = wav.squeeze().cpu().numpy()
+
+        # Convert float32 [-1,1] -> int16 PCM
+        audio_pcm = np.clip(audio_np, -1, 1)
+
+        audio_pcm = (audio_pcm * 32767).astype(np.int16)
+
+        # Send in chunks
+        chunk_size = 4096
+
+        for i in range(0, len(audio_pcm), chunk_size):
+
+            chunk = audio_pcm[i : i + chunk_size]
+
+            ws.send(chunk.tobytes(), opcode=websocket.ABNF.OPCODE_BINARY)
+
+    print("Streaming complete")
 
 
 def speak(text: str, cb) -> None:
@@ -141,7 +184,7 @@ def speak(text: str, cb) -> None:
     if cb is not None:
         cb()
 
-    stream_audio(model, text)
+    stream_audio_to_server(model, text)
 
     # subprocess.run(
     #     ["mpv", "--no-terminal", f"--audio-device={AUDIO_DEVICE}", voice_path]

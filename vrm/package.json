@@ -1,0 +1,18 @@
+{
+  "name": "vrm",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@pixiv/three-vrm": "^3.5.5",
+    "three": "^0.185.1",
+    "vrm-mixamo-retarget": "^1.0.3",
+    "ws": "^8.21.1"
+  }
+}
