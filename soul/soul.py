@@ -21,35 +21,40 @@ def soul():
     dir = file_dir(__file__)
     with open(os.path.join(dir, "local_personality.txt"), "r") as file:
         prompt = file.read()
-    # KEY = os.getenv("MIKO_KEY")
-    KEY = os.getenv("MICHAEL_KEY")
+    KEY = os.getenv("MIKO_KEY")
+    # KEY = os.getenv("MICHAEL_KEY")
     client = Client(
         host="https://ollama.com",
         headers={"Authorization": "Bearer " + KEY},
     )
 
     messages = [
-        {
-            "role": "system",
-            "content": prompt,
-        }
+        # {
+        #     "role": "system",
+        #     "content": prompt,
+        # }
     ]
 
     def talk_to(text: str):
         messages.append({"role": "user", "content": text})
 
+        while len(messages) > 15:
+            del messages[0]
+            if messages and messages[0]["role"] == "assistant":
+                del messages[0]
+            if messages and messages[0]["role"] == "tool":
+                del messages[0]
+
         while True:
-            response = client.chat(
-                # model="yuna",
-                model="gpt-oss:120b-cloud",
+            response = chat(
+                model="yuna",
+                # model="gpt-oss:120b-cloud",
                 messages=messages,
                 tools=tools_meta,
                 think=False,
-                format=Output.model_json_schema(),
+                format=Output.model_json_schema()
             )
             print("response", response)
-            content = response.message.content
-            # messages.append({"role": "assistant", "content": content})
             messages.append(response.message)
             if response.message.tool_calls:
                 for tc in response.message.tool_calls:
@@ -69,15 +74,19 @@ def soul():
                         )
             else:
                 # end the loop when there are no more tool calls
+                content = response.message.content
                 break
 
+        if content == '' or content == '{}':
+            return content
+        
         try:
             output = Output.model_validate_json(content)
-        except Exception:
-            print(str(Exception))
+        except Exception as e:
+            print(e)
             json_response = json.dumps(
                 {
-                    "response": "Error has occured",
+                    "response": content,
                     "facial_expression": "NEUTRAL",
                     "pose": "IDLE",
                 }

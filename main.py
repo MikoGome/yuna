@@ -4,6 +4,8 @@ from soul.soul import soul
 from body.warudo_sender import send_expression, send_animation
 from senses.hearing.hearing import listen
 import re
+import json
+from body.move import send_json
 
 def main():
     talk_to = soul()
@@ -29,6 +31,8 @@ def main():
         "sarcastic"
     ]
     is_activated = False
+    activation_phrases = ["yuna", "ina", "una", "you know"]
+    deactivation_phrases = ["thank you", "thanks"]
     while True:
         content = listen()
         # content = input("You: ")
@@ -36,30 +40,35 @@ def main():
             continue
         
         if content.strip().lower() == "shut down." or content.strip().lower() == "shut down":
-            speak("Shutting Down...", None)
+            speak("Shutting Down...")
             break
-        if content.strip().lower().startswith("activate"):
+        if any(word.strip().lower() in content.strip().lower() for word in activation_phrases):
             is_activated = True
-        elif content.strip().lower().startswith("deactivate"):
-            is_activated = False
-        if not is_activated:
+        elif not is_activated:
             continue
+        elif any(word.strip().lower() in content.strip().lower() for word in deactivation_phrases):
+            is_activated = False
+
         response = talk_to(content)
+
+        if response == '' or response == '{}':
+            continue
+
+        send_json({
+            "response": response.response,
+            "facial_expression": response.facial_expression,
+            "pose": response.pose
+        })
+
         reply = filter_paralinguistic_tags(response.response, paralinguistic_tags)
         # reply = filter_action_asterisks(reply)
         print(reply)
-
-        def cb():
-            send_expression(response.facial_expression.upper())
-            send_animation(response.pose.upper())
-
-        speak(reply, cb)
+        speak(reply)
     
     print("program shutting down...")
 
 
 def filter_paralinguistic_tags(text: str, tags: list[str]):
-    print("filtering paralinguistic")
     stack = []
     for i, c in enumerate(text):
         if c == "[":

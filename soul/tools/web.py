@@ -10,10 +10,10 @@ def web_search(query: str) -> str:
         query: The search query to look up.
         
     Returns:
-        A JSON string containing the title, snippet, and URL of the top 3 results.
+        A JSON string containing the title, snippet, and URL of the top 5 results.
     """
     try:
-        results = DDGS().text(query, max_results=10)
+        results = DDGS().text(query, max_results=5)
         formatted = [
             {
                 "title": r.get("title"), 

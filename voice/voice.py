@@ -2,7 +2,7 @@ import torchaudio as ta
 import os
 import time
 import sys
-from utils import file_dir
+from utils import file_dir, normalize_tts
 from . import model
 
 # from playsound3 import playsound
@@ -16,7 +16,7 @@ import sounddevice as sd
 import websocket
 
 ws = websocket.WebSocket()
-ws.connect("ws://localhost:8080")
+ws.connect("ws://localhost:3000")
 
 # Tell Node this is the audio producer
 ws.send("python")
@@ -111,7 +111,7 @@ def stream_audio(model, text: str, output_device=None) -> None:
         if not sentence.strip():
             continue
 
-        print(f"Generating: {sentence}")
+        # print(f"Generating: {sentence}")
 
         # original_stdout = sys.stdout
         # original_stderr = sys.stderr
@@ -120,7 +120,7 @@ def stream_audio(model, text: str, output_device=None) -> None:
 
         wav = model.generate(
             sentence,
-            audio_prompt_path="./voice/voice.mp3",
+            audio_prompt_path="./voice/voice.wav",
         )
 
         # sys.stdout = original_stdout
@@ -145,7 +145,7 @@ def stream_audio(model, text: str, output_device=None) -> None:
 
 def stream_audio_to_server(model, text: str) -> None:
     sentences = re.split(r"(?<=[.!?])\s+", text.strip())
-    print('samplerate', model.sr)
+    print("samplerate", model.sr)
     for sentence in sentences:
         if not sentence.strip():
             continue
@@ -154,7 +154,7 @@ def stream_audio_to_server(model, text: str) -> None:
 
         wav = model.generate(
             sentence,
-            audio_prompt_path="./voice/voice.mp3",
+            audio_prompt_path="./voice/voice.wav",
         )
 
         # wav shape: [1, samples]
@@ -177,20 +177,9 @@ def stream_audio_to_server(model, text: str) -> None:
     print("Streaming complete")
 
 
-def speak(text: str, cb) -> None:
-    voice_path = os.path.join(file_dir(__file__), "voice.mp3")
-    # Load the Turbo model
-    # create_wav_file(model, text, voice_path)
-    if cb is not None:
-        cb()
-
-    stream_audio_to_server(model, text)
-
-    # subprocess.run(
-    #     ["mpv", "--no-terminal", f"--audio-device={AUDIO_DEVICE}", voice_path]
-    # )
-    # play_wav(text)
-    # os.unlink(voice_path)
+def speak(text: str) -> None:
+    voice_path = os.path.join(file_dir(__file__), "voice.wav")
+    stream_audio_to_server(model, normalize_tts(text))
 
 
 if __name__ == "__main__":

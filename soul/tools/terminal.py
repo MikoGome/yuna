@@ -46,7 +46,7 @@ import shutil
 #     except Exception as e:
 #         return f"Failed to execute '{command}'. Error: {str(e)}"
 
-def list_directory(path: str = ".") -> str:
+def list_directory(path: str = "/home/miko") -> str:
     """
     Lists the contents of a specified directory.
     """
@@ -131,48 +131,6 @@ def find_applications(path: str, iname_pattern: str, file_type: str = "d", max_d
     except Exception as e:
         return f"Failed to execute find search. Error: {str(e)}"
 
-# def open_item(path: str) -> str:
-#     """
-#     Opens a file, directory, or URL using the system's default application.
-#     Simulates the terminal 'open' command across different operating systems.
-#     """
-#     # Determine if the target is a URL or a local file/directory
-#     is_url = urllib.parse.urlparse(path).scheme in ('http', 'https')
-    
-#     if not is_url:
-#         target_path = os.path.abspath(path)
-#         if not os.path.exists(target_path):
-#             return f"Error: The path '{target_path}' does not exist."
-#         target = target_path
-#     else:
-#         target = path
-        
-#     try:
-#         # Windows
-#         if sys.platform == 'win32':
-#             os.startfile(target)
-            
-#         # macOS
-#         elif sys.platform == 'darwin':
-#             subprocess.run(['open', target], check=True)
-            
-#         # Linux / Unix
-#         else:
-#             # Most Linux distros use xdg-open, but we check for 'open' as well
-#             if shutil.which('xdg-open'):
-#                 subprocess.run(['xdg-open', target], check=True)
-#             elif shutil.which('open'):
-#                 subprocess.run(['open', target], check=True)
-#             else:
-#                 return "Error: Neither 'xdg-open' nor 'open' commands are available on this system."
-                
-#         return f"Successfully opened: {target}"
-        
-#     except subprocess.CalledProcessError:
-#         return f"Failed to open '{target}'. Command returned non-zero exit status."
-#     except Exception as e:
-#         return f"An unexpected error occurred while trying to open '{target}': {str(e)}"
-
 
 # =====================================================================
 # Tool Definition Metadata
@@ -241,22 +199,5 @@ terminal_tools_meta = [
                 'required': ['path', 'iname_pattern']
             },
         },
-    },
-    # {
-    #     'type': 'function',
-    #     'function': {
-    #         'name': 'open_item',
-    #         'description': 'Opens a file, directory, or URL using the default system application (equivalent to the terminal "open" command). Useful for launching UI apps, viewing images, or opening web pages.',
-    #         'parameters': {
-    #             'type': 'object',
-    #             'properties': {
-    #                 'path': {
-    #                     'type': 'string',
-    #                     'description': 'The absolute/relative path or URL to open. Examples: "./report.pdf", "/var/log", or "https://google.com".'
-    #                 }
-    #             },
-    #             'required': ['path']
-    #         },
-    #     },
-    # }
+    }
 ]

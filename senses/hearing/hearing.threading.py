@@ -1,4 +1,7 @@
 import collections
+import queue
+import threading
+
 import numpy as np
 import sounddevice as sd
 import torch
@@ -20,6 +23,15 @@ VAD_THRESHOLD = 0.5
 
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+
+
+# ==========================
+# GLOBALS
+# ==========================
+
+speech_queue = queue.Queue()
+
+running = True
 
 
 # ==========================
@@ -66,44 +78,13 @@ def is_speech(chunk):
 
 
 # ==========================
-# TRANSCRIPTION FUNCTION
+# AUDIO THREAD
 # ==========================
 
 
-def transcribe_audio(audio):
-    peak = np.max(np.abs(audio))
+def audio_listener():
 
-    if peak > 0:
-
-        audio /= peak
-
-    with torch.no_grad():
-
-        result = asr_model.transcribe([audio], batch_size=1, verbose=False)
-
-    if hasattr(result[0], "text"):
-
-        text = result[0].text
-
-    else:
-
-        text = str(result[0])
-
-    text = text.strip()
-
-    print("User:", text)
-
-    return text
-
-
-# ==========================
-# MAIN LISTENING LOOP
-# ==========================
-
-
-def listen():
-
-    print("Listening started...")
+    print("Microphone thread started")
 
     audio_buffer = []
 
@@ -124,7 +105,7 @@ def listen():
         dtype="float32",
     ) as stream:
 
-        while True:
+        while running:
 
             chunk, overflow = stream.read(CHUNK_SIZE)
 
@@ -162,12 +143,53 @@ def listen():
 
                         audio = np.concatenate(audio_buffer).astype(np.float32)
 
+                        speech_queue.put(audio)
+
                         audio_buffer.clear()
 
                         recording = False
 
                         silence_chunks = 0
 
-                        # Transcribe synchronously upon utterance completion
-                        text = transcribe_audio(audio)
-                        return text
+
+# ==========================
+# START LISTENER
+# ==========================
+
+listener_thread = threading.Thread(target=audio_listener, daemon=True)
+
+listener_thread.start()
+
+
+# ==========================
+# TRANSCRIPTION
+# ==========================
+
+
+def listen():
+
+    audio = speech_queue.get()
+
+    peak = np.max(np.abs(audio))
+
+    if peak > 0:
+
+        audio /= peak
+
+    with torch.no_grad():
+
+        result = asr_model.transcribe([audio], batch_size=1, verbose=False)
+
+    if hasattr(result[0], "text"):
+
+        text = result[0].text
+
+    else:
+
+        text = str(result[0])
+
+    text = text.strip()
+
+    print("User:", text)
+
+    return text

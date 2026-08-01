@@ -4,7 +4,7 @@ const path = require("path");
 const WebSocket = require("ws");
 
 const PORT = 3000;
-const WS_PORT = 8080;
+const PORT2 = 3001;
 
 const mimeTypes = {
   ".html": "text/html",
@@ -48,7 +48,7 @@ const server = http.createServer((req, res) => {
 server.listen(PORT, () => console.log(`Server is running at PORT ${PORT}`));
 
 const wss = new WebSocket.Server({
-  port: WS_PORT,
+  server,
 });
 
 let pythonClient = null;
@@ -78,8 +78,6 @@ wss.on("connection", (ws) => {
     // Binary data = audio
 
     if (ws === pythonClient) {
-      console.log("Audio chunk:", data.length, "bytes");
-
       for (const browser of browsers) {
         if (browser.readyState === WebSocket.OPEN) {
           browser.send(data);
@@ -95,6 +93,37 @@ wss.on("connection", (ws) => {
 
     if (ws === pythonClient) {
       pythonClient = null;
+    }
+  });
+});
+
+const controlClients = [];
+
+const wss2 = new WebSocket.Server({
+  port: PORT2,
+});
+
+wss2.on("connection", (ws) => {
+  console.log("control socket connected");
+
+  controlClients.push(ws);
+
+  ws.on("message", (data) => {
+    console.log("Control message:", data.toString());
+
+    // send to browsers
+    for (const client of controlClients) {
+      if (client !== ws && client.readyState === WebSocket.OPEN) {
+        client.send(String(data));
+      }
+    }
+  });
+
+  ws.on("close", () => {
+    const index = controlClients.indexOf(ws);
+
+    if (index !== -1) {
+      controlClients.splice(index, 1);
     }
   });
 });
