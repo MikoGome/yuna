@@ -98,6 +98,21 @@ def normalize_tts(text: str):
     # Fix times first
     text = normalize_times(text)
 
+    # Convert currency like $10 or $10.42 to words
+    def replace_currency(match):
+        amount = int(match.group(1))
+        # Use number_to_words if available, or fallback to string
+        amount_word = number_to_words(amount) if amount < 60 else str(amount)
+        
+        # Handle singular/plural "dollar" vs "dollars"
+        currency_word = "dollar" if amount == 1 else "dollars"
+        return f"{amount_word} {currency_word}"
+
+    text = re.sub(
+        r"\$(\d+)\b",
+        replace_currency,
+        text
+    )
 
     # Make AM / PM spoken naturally
     text = re.sub(
@@ -114,17 +129,14 @@ def normalize_tts(text: str):
         flags=re.IGNORECASE
     )
 
-
-    # Common TTS fixes
+    # Common TTS fixes (removed $ since it's handled above)
     replacements = {
         "&": "and",
         "%": "percent",
-        "$": "dollars",
     }
 
     for old, new in replacements.items():
         text = text.replace(old, new)
-
 
     # Remove double spaces
     text = re.sub(

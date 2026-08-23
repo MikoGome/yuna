@@ -42,11 +42,11 @@ def main():
         if content.strip().lower() == "shut down." or content.strip().lower() == "shut down":
             speak("Shutting Down...")
             break
-        if any(word.strip().lower() in content.strip().lower() for word in activation_phrases):
+        if any(content.strip().lower().startswith(word.strip().lower()) for word in activation_phrases):
             is_activated = True
         elif not is_activated:
             continue
-        elif any(word.strip().lower() in content.strip().lower() for word in deactivation_phrases):
+        elif any(content.strip().lower().startswith(word.strip().lower()) for word in deactivation_phrases):
             is_activated = False
 
         response = talk_to(content)

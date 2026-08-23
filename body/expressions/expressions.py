@@ -1,13 +1,12 @@
 from enum import Enum
 
-expressions = ["NEUTRAL", "SMUG", "ANGRY", "SORROW", "SHOCKED", "HAPPY", "WINK"]
+expressions = ["neutral", "sad", "relaxed", "surprised", "angry"]
 
 
 class Expressions(str, Enum):
-    NEUTRAL = "NEUTRAL"
-    SMUG = "SMUG"
-    ANGRY = "ANGRY"
-    SORROW = "SORROW"
-    SHOCKED = "SHOCKED"
-    HAPPY = "HAPPY"
-    WINK = "WINK"
+    NEUTRAL = "neutral"
+    HAPPY = "happy"
+    SAD = "sad"
+    RELAXED = "relaxed"
+    SURPRISED = "surprised"
+    ANGRY = "angry"

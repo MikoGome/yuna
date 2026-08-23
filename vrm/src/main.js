@@ -41,28 +41,30 @@ const character = {
   currentExpression: "neutral",
   expressionWeights: {},
   targetExpressionWeights: {},
-  
+
   // Custom Expression Presets (combining multiple VRM blendshapes for a richer look)
   customExpressions: {
     neutral: {
       happy: 0.0,
       relaxed: 0.0,
-      ih: 0.0,
       sad: 0.0,
-      surprised: 0.0
+      angry: 0.0,
+      surprised: 0.0,
+      ih: 0.0,
     },
     customHappy: {
-      happy: 0.8,    // Primary joyful expression
+      happy: 0.8, // Primary joyful expression
       relaxed: 0.35, // Softens/squints the eyes for a genuine "Duchenne" smile
-      ih: 0.2        // Widens the mouth corners slightly
-    }
+      ih: 0.2, // Widens the mouth corners slightly
+    },
   },
 
   // Helper to trigger a custom expression by name
   setCustomExpression(name) {
-    const preset = this.customExpressions[name] || this.customExpressions.neutral;
+    const preset =
+      this.customExpressions[name] || this.customExpressions.neutral;
     this.currentExpression = name;
-    
+
     for (const [key, value] of Object.entries(preset)) {
       this.targetExpressionWeights[key] = value;
     }
@@ -71,7 +73,7 @@ const character = {
   nextGazeTime: 0,
   isSpeaking: false,
   // Temporary storage vectors for smooth interpolation
-  targetPosition: new THREE.Vector3()
+  targetPosition: new THREE.Vector3(),
 };
 
 // ========================
@@ -141,7 +143,20 @@ controlSocket.onopen = () => {
 
 controlSocket.onmessage = (event) => {
   console.log("received:", event.data);
+  const {facial_expression, response} = JSON.parse(event.data);
+  character.setExpression(facial_expression.toLowerCase());
+  displaySubtitles(response)
 };
+
+function displaySubtitles(text) {
+  const subHolder = document.querySelector("#subtitles")
+  while(subHolder.hasChildNodes()) {
+    subHolder.removeChild(subHolder.firstChild)
+  }
+  const sub = document.createElement("p");
+  sub.innerText = text;
+  subHolder.appendChild(sub);
+}
 
 // ========================
 // KEYBOARD CONTROLS (TESTING EXPRESSIONS)
@@ -152,9 +167,28 @@ window.addEventListener("keydown", (event) => {
   if (key === "h") {
     console.log("Expression: customHappy");
     character.setCustomExpression("customHappy");
+    console.log('expressionWeights', character.expressionWeights);
+    console.log('targetExpressionWeights', character.targetExpressionWeights);
   } else if (key === "n") {
     console.log("Expression: neutral");
     character.setCustomExpression("neutral");
+    console.log('expressionWeights', character.expressionWeights);
+    console.log('targetExpressionWeights', character.targetExpressionWeights);
+  } else if (key === "s") {
+    console.log("Expression: neutral");
+    console.log('expressionWeights', character.expressionWeights);
+    console.log('targetExpressionWeights', character.targetExpressionWeights);
+    character.setExpression("sad");
+  } else if (key === "j") {
+    character.setExpression("happy");
+    console.log('expressionWeights', character.expressionWeights);
+    console.log('targetExpressionWeights', character.targetExpressionWeights);
+  } else if (key === "t") {
+    console.log("netural");
+
+    character.setExpression("neutral");
+    console.log('expressionWeights', character.expressionWeights);
+    console.log('targetExpressionWeights', character.targetExpressionWeights);
   }
 });
 
@@ -184,8 +218,9 @@ loader.load(
     });
 
     currentVrm = vrm;
+    console.log(vrm);
     mixer = new THREE.AnimationMixer(vrm.scene);
-    
+
     // Assign lookAt target directly using the native object
     if (vrm.lookAt) {
       vrm.lookAt.target = lookAtTarget;
@@ -246,17 +281,22 @@ function updateCustomExpressions(delta, character, vrm) {
   const speed = 6.0;
   const lerpFactor = Math.min(1.0, delta * speed);
 
-  for (const [key, targetValue] of Object.entries(character.targetExpressionWeights)) {
+  for (const [key, targetValue] of Object.entries(
+    character.targetExpressionWeights,
+  )) {
     if (character.expressionWeights[key] === undefined) {
       character.expressionWeights[key] = 0;
     }
 
-    character.expressionWeights[key] += 
+    character.expressionWeights[key] +=
       (targetValue - character.expressionWeights[key]) * lerpFactor;
 
     const exprName = vrm.expressionManager.getExpression(key) ? key : null;
     if (exprName) {
-      vrm.expressionManager.setValue(exprName, character.expressionWeights[key]);
+      vrm.expressionManager.setValue(
+        exprName,
+        character.expressionWeights[key],
+      );
     }
   }
 }
@@ -302,20 +342,23 @@ function animate() {
     analyser.getByteFrequencyData(frequencyData);
 
     // Split frequency spectrum into distinct functional bins
-    let lowSum = 0, midSum = 0, highSum = 0;
+    let lowSum = 0,
+      midSum = 0,
+      highSum = 0;
     const third = Math.floor(frequencyData.length / 3);
 
     for (let i = 0; i < third; i++) lowSum += frequencyData[i];
     for (let i = third; i < third * 2; i++) midSum += frequencyData[i];
-    for (let i = third * 2; i < frequencyData.length; i++) highSum += frequencyData[i];
+    for (let i = third * 2; i < frequencyData.length; i++)
+      highSum += frequencyData[i];
 
-    const lowEnergy = (lowSum / third) / 255;
-    const midEnergy = (midSum / third) / 255;
-    const highEnergy = (highSum / third) / 255;
+    const lowEnergy = lowSum / third / 255;
+    const midEnergy = midSum / third / 255;
+    const highEnergy = highSum / third / 255;
 
     // Map frequency energy distributions to distinct mouth shapes (visemes)
-    character.targetMouthValues.aa = Math.min(1, lowEnergy * 2.5);  // Open jaw / deep sounds
-    character.targetMouthValues.ih = Math.min(1, midEnergy * 2.5);  // Wide smile/spread sounds
+    character.targetMouthValues.aa = Math.min(1, lowEnergy * 2.5); // Open jaw / deep sounds
+    character.targetMouthValues.ih = Math.min(1, midEnergy * 2.5); // Wide smile/spread sounds
     character.targetMouthValues.ou = Math.min(1, highEnergy * 2.0); // Rounded / pursed mouth sounds
 
     const overallEnergy = (lowEnergy + midEnergy + highEnergy) / 3;
@@ -327,11 +370,21 @@ function animate() {
 
       // Smoothly update each viseme value
       for (const viseme of ["aa", "ih", "ou"]) {
-        character.mouthValues[viseme] += (character.targetMouthValues[viseme] - character.mouthValues[viseme]) * lerpFactor;
-        
+        character.mouthValues[viseme] +=
+          (character.targetMouthValues[viseme] -
+            character.mouthValues[viseme]) *
+          lerpFactor;
+
         // Check if VRM model supports the specific shape name, fallback gracefully
-        const shapeName = currentVrm.expressionManager.getExpression(viseme) ? viseme : (viseme === "ou" ? "oh" : "a");
-        currentVrm.expressionManager.setValue(shapeName, character.mouthValues[viseme]);
+        const shapeName = currentVrm.expressionManager.getExpression(viseme)
+          ? viseme
+          : viseme === "ou"
+            ? "oh"
+            : "a";
+        currentVrm.expressionManager.setValue(
+          shapeName,
+          character.mouthValues[viseme],
+        );
       }
 
       updateCustomExpressions(delta, character, currentVrm);
@@ -345,7 +398,7 @@ function animate() {
       if (t > character.nextGazeTime) {
         const randomX = (Math.random() - 0.5) * 1.5;
         const randomY = (Math.random() - 0.5) * 0.8;
-        
+
         character.targetPosition.copy(camera.position);
         character.targetPosition.x += randomX;
         character.targetPosition.y += randomY;
@@ -355,7 +408,10 @@ function animate() {
     }
 
     // Smoothly lerp the dummy target object's position (clamped to prevent overshoot)
-    lookAtTarget.position.lerp(character.targetPosition, Math.min(1.0, delta * 4.0));
+    lookAtTarget.position.lerp(
+      character.targetPosition,
+      Math.min(1.0, delta * 4.0),
+    );
 
     currentVrm.update(delta);
   }

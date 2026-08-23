@@ -21,8 +21,6 @@ ws.connect("ws://localhost:3000")
 # Tell Node this is the audio producer
 ws.send("python")
 
-os.environ["PULSE_SINK"] = "null-sink"
-
 
 def create_wav_file(model, text: str, output_dir: str) -> None:
     # 1. Split the text into sentences (looks for ., !, or ? followed by a space)

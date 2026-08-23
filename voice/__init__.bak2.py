@@ -14,8 +14,12 @@ VOICE_FILE = "./voice/voice.wav"
 # "Hello, my name is Yuna. I am your AI assistant."
 
 REFERENCE_TEXT = """
-The chirping of the songbirds at daybreak always puts me in the best of moods.
+ My schooling started very early. In fact, my earliest memories are of my father teaching me to read. Despite my best efforts, my ability is not half of his. Enough to write operas, but compared to his level of erudition, I still have much to strive for.
 """
+
+# REFERENCE_TEXT = """
+# It's plain to see that you're overwhelmed about something, but you're not going to tell me what's really going on, are you? I don't know if doing this will make things any easier for you, but if it helps at all, I'm happy to.
+# """
 
 
 # ==========================
@@ -28,9 +32,8 @@ print("Loading Qwen3-TTS...")
 model = Qwen3TTSModel.from_pretrained(
     MODEL_NAME,
     torch_dtype=torch.bfloat16,  # Change from torch.float16 to torch.bfloat16 or torch.float32
-    device_map="cuda"
+    device_map="cuda",
 )
-
 
 print("Qwen3-TTS loaded")
 

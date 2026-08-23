@@ -7,3 +7,26 @@ body {
 canvas {
   display: block;
 }
+
+div {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+#subtitles p {
+  color: #ffffff;
+  /* Layers shadows: top, right, bottom, left, and the 4 diagonal corners */
+  text-shadow: 
+    -1px -1px 0 #000000,  
+     1px -1px 0 #000000,
+    -1px  1px 0 #000000,
+     1px  1px 0 #000000,
+    -1px  0px 0 #000000,
+     1px  0px 0 #000000,
+     0px -1px 0 #000000,
+     0px  1px 0 #000000;
+  font-size: 2rem;
+  text-align: center;
+}

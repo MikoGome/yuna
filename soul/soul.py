@@ -24,35 +24,37 @@ def soul():
     KEY = os.getenv("MIKO_KEY")
     # KEY = os.getenv("MICHAEL_KEY")
     client = Client(
+        # host="http://10.0.0.22:11434"
         host="https://ollama.com",
         headers={"Authorization": "Bearer " + KEY},
     )
 
     messages = [
-        # {
-        #     "role": "system",
-        #     "content": prompt,
-        # }
+        {
+            "role": "system",
+            "content": prompt,
+        }
     ]
 
     def talk_to(text: str):
         messages.append({"role": "user", "content": text})
 
-        while len(messages) > 15:
-            del messages[0]
-            if messages and messages[0]["role"] == "assistant":
-                del messages[0]
-            if messages and messages[0]["role"] == "tool":
-                del messages[0]
+        # while len(messages) > 15:
+        #     del messages[0]
+        #     if messages and messages[0]["role"] == "assistant":
+        #         del messages[0]
+        #     if messages and messages[0]["role"] == "tool":
+        #         del messages[0]
 
         while True:
-            response = chat(
-                model="yuna",
-                # model="gpt-oss:120b-cloud",
+            response = client.chat(
+                model="gpt-oss:120b-cloud",
+                # model="gurubot/gpt-oss-derestricted:120b",
+                # model="huihui_ai/Qwen3.8-abliterated:latest",
                 messages=messages,
                 tools=tools_meta,
                 think=False,
-                format=Output.model_json_schema()
+                # format=Output.model_json_schema()
             )
             print("response", response)
             messages.append(response.message)
@@ -87,8 +89,8 @@ def soul():
             json_response = json.dumps(
                 {
                     "response": content,
-                    "facial_expression": "NEUTRAL",
-                    "pose": "IDLE",
+                    "facial_expression": "neutral",
+                    "pose": "idle",
                 }
             )
             output = Output.model_validate_json(json_response)

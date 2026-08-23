@@ -11,7 +11,7 @@ from nemo.collections.asr.models import EncDecRNNTBPEModel
 
 # ==========================
 # CONFIG
-# ==========================
+# ==========================sudo 
 
 SAMPLE_RATE = 16000
 CHUNK_SIZE = 512

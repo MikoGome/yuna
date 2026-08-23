@@ -3,23 +3,36 @@ import numpy as np
 import sounddevice as sd
 import torch
 
+from faster_whisper import WhisperModel
 from silero_vad import load_silero_vad
-from nemo.collections.asr.models import EncDecRNNTBPEModel
 
 # ==========================
-# CONFIG
+# PERFORMANCE
+# ==========================
+
+torch.set_num_threads(1)
+
+
+# ==========================
+# CONFIGURATION
 # ==========================
 
 SAMPLE_RATE = 16000
 CHUNK_SIZE = 512
 
-SILENCE_DURATION = 1.0
-PRE_ROLL_SECONDS = 0.8
-
 VAD_THRESHOLD = 0.5
 
+# How long silence is allowed after speech ends
+SILENCE_DURATION = 0.8
 
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+# Keep some audio before speech starts
+PRE_ROLL_SECONDS = 0.8
+
+# Require multiple VAD hits before starting
+MIN_SPEECH_FRAMES = 3
+
+# Ignore recordings quieter than this
+MIN_RMS = 0.01
 
 
 # ==========================
@@ -27,95 +40,36 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 # ==========================
 
 print("Loading Silero VAD...")
-
 vad_model = load_silero_vad()
-vad_model.to(DEVICE)
-vad_model.eval()
-
-print("Silero loaded")
 
 
-print("Loading Parakeet...")
-
-asr_model = EncDecRNNTBPEModel.from_pretrained(model_name="nvidia/parakeet-tdt-0.6b-v2")
-
-asr_model.to(DEVICE)
-
-if DEVICE == "cuda":
-    asr_model.half()
-
-asr_model.eval()
-
-print("Parakeet loaded\n")
+print("Loading Whisper...")
+model = WhisperModel("large-v3", device="cuda", compute_type="float16")
 
 
 # ==========================
-# VAD
-# ==========================
-
-
-def is_speech(chunk):
-
-    tensor = torch.from_numpy(chunk.copy()).float().to(DEVICE)
-
-    with torch.no_grad():
-
-        prob = vad_model(tensor, SAMPLE_RATE)
-
-    return prob.item() > VAD_THRESHOLD
-
-
-# ==========================
-# TRANSCRIPTION FUNCTION
-# ==========================
-
-
-def transcribe_audio(audio):
-    peak = np.max(np.abs(audio))
-
-    if peak > 0:
-
-        audio /= peak
-
-    with torch.no_grad():
-
-        result = asr_model.transcribe([audio], batch_size=1, verbose=False)
-
-    if hasattr(result[0], "text"):
-
-        text = result[0].text
-
-    else:
-
-        text = str(result[0])
-
-    text = text.strip()
-
-    print("User:", text)
-
-    return text
-
-
-# ==========================
-# MAIN LISTENING LOOP
+# LISTEN FUNCTION
 # ==========================
 
 
 def listen():
 
-    print("Listening started...")
+    print("\nReady! Listening...")
 
     audio_buffer = []
 
     pre_roll_chunks = int((PRE_ROLL_SECONDS * SAMPLE_RATE) / CHUNK_SIZE)
 
-    pre_roll = collections.deque(maxlen=pre_roll_chunks)
+    pre_roll_buffer = collections.deque(maxlen=pre_roll_chunks)
 
-    recording = False
+    silent_chunks_tracker = 0
+    speech_frames = 0
 
-    silence_chunks = 0
+    is_recording = False
 
-    max_silence = int((SILENCE_DURATION * SAMPLE_RATE) / CHUNK_SIZE)
+    max_silent_chunks = int((SILENCE_DURATION * SAMPLE_RATE) / CHUNK_SIZE)
+
+    vad_model.reset_states()
 
     with sd.InputStream(
         samplerate=SAMPLE_RATE,
@@ -126,48 +80,143 @@ def listen():
 
         while True:
 
-            chunk, overflow = stream.read(CHUNK_SIZE)
+            chunk, overflowed = stream.read(CHUNK_SIZE)
 
-            chunk = chunk.flatten()
+            chunk_flat = chunk.flatten()
 
-            speech = is_speech(chunk)
+            # Debug information
+            rms = np.sqrt(np.mean(chunk_flat**2))
 
-            if not recording:
+            tensor_chunk = torch.from_numpy(chunk_flat)
 
-                pre_roll.append(chunk)
+            speech_prob = vad_model(tensor_chunk, SAMPLE_RATE).item()
 
-            if speech:
+            # Store history before speech
+            if not is_recording:
+                pre_roll_buffer.append(chunk_flat)
 
-                if not recording:
+            # Count consecutive speech frames
 
-                    print("[Speech start]")
-
-                    recording = True
-
-                    audio_buffer.extend(list(pre_roll))
-
-                audio_buffer.append(chunk)
-
-                silence_chunks = 0
-
+            if speech_prob >= VAD_THRESHOLD:
+                speech_frames += 1
             else:
+                speech_frames = 0
 
-                if recording:
+            # Start recording
 
-                    audio_buffer.append(chunk)
+            if speech_frames >= MIN_SPEECH_FRAMES:
 
-                    silence_chunks += 1
+                if not is_recording:
 
-                    if silence_chunks >= max_silence:
+                    print("[Voice detected]")
 
-                        audio = np.concatenate(audio_buffer).astype(np.float32)
+                    is_recording = True
 
-                        audio_buffer.clear()
+                    # Add pre-roll audio
 
-                        recording = False
+                    audio_buffer.extend(list(pre_roll_buffer))
 
-                        silence_chunks = 0
+                audio_buffer.append(chunk_flat)
 
-                        # Transcribe synchronously upon utterance completion
-                        text = transcribe_audio(audio)
-                        return text
+                silent_chunks_tracker = 0
+
+            # Continue recording until silence
+
+            elif is_recording:
+
+                audio_buffer.append(chunk_flat)
+
+                silent_chunks_tracker += 1
+
+                if silent_chunks_tracker >= max_silent_chunks:
+
+                    print("[Silence detected]")
+
+                    break
+
+    if not audio_buffer:
+
+        print("No speech detected")
+
+        return ""
+
+    # Combine audio
+
+    final_audio = np.concatenate(audio_buffer, axis=0).astype(np.float32)
+
+    # ==========================
+    # SILENCE CHECK
+    # ==========================
+
+    final_rms = np.sqrt(np.mean(final_audio**2))
+
+    print(f"Final RMS: {final_rms:.5f}")
+
+    if final_rms < MIN_RMS:
+
+        print("Audio too quiet, ignoring")
+
+        return ""
+
+    # ==========================
+    # WHISPER
+    # ==========================
+
+    segments, info = model.transcribe(
+        final_audio,
+        # Faster + less hallucination
+        beam_size=1,
+        temperature=0,
+        language="en",
+        # Prevent repeating previous context
+        condition_on_previous_text=False,
+        # Silero already handled this
+        vad_filter=False,
+    )
+
+    output = []
+
+    for segment in segments:
+
+        print(
+            "TEXT:",
+            segment.text,
+            "| logprob:",
+            round(segment.avg_logprob, 2),
+            "| no_speech:",
+            round(segment.no_speech_prob, 2),
+        )
+
+        # Ignore silence hallucinations
+
+        if segment.no_speech_prob > 0.6:
+            continue
+
+        # Ignore very uncertain results
+
+        if segment.avg_logprob < -1.0:
+            continue
+
+        output.append(segment.text)
+
+    text = "".join(output).strip()
+
+    print("\n--- RESULT ---")
+
+    print(text)
+
+    return text
+
+
+# ==========================
+# MAIN
+# ==========================
+
+if __name__ == "__main__":
+
+    while True:
+
+        result = listen()
+
+        if result:
+            print("You said:", result)
