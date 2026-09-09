@@ -2,7 +2,7 @@ import shutil
 import subprocess
 import difflib
 
-def get_monitors_info() -> list:
+def _get_monitors_info() -> list:
     """
     Parses `xrandr --listmonitors` to return a list of connected monitors
     ordered by index (0, 1, 2...) with their exact x_offset, y_offset, width, and height.
@@ -168,7 +168,7 @@ def manage_window(
             return f"Successfully sent graceful close signal to '{best_match_name}'."
 
         elif action == "move":
-            monitors = get_monitors_info()
+            monitors = _get_monitors_info()
             
             if monitor >= len(monitors) or monitor < 0:
                 monitor = 0

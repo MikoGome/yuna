@@ -1,6 +1,8 @@
 import urllib.parse
 import webbrowser
 
+from .browser import open_browser
+
 def open_google_maps_directions(
     destination: str, 
     origin: str = None, 
@@ -36,11 +38,8 @@ def open_google_maps_directions(
     # Encode parameters cleanly into the URL
     full_url = f"{base_url}&{urllib.parse.urlencode(params)}"
 
-    # If you want to reuse your existing open_browser() function:
-    # return open_browser(full_url, incognito=incognito)
-    
-    # Standalone fallback using standard library:
-    webbrowser.open(full_url)
+    # Reuse the shared browser tool so incognito mode actually works
+    open_browser(full_url, incognito=incognito)
     return f"Successfully opened Google Maps directions to '{destination}' ({mode} mode)"
 
 google_maps_tools_meta = [

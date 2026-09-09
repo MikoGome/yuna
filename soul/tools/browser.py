@@ -25,6 +25,9 @@ def open_browser(url: str, incognito: bool = False) -> str:
     browser_flags = {
         'chrome': '--incognito',
         'google-chrome': '--incognito',
+        'google-chrome-stable': '--incognito',
+        'chromium': '--incognito',
+        'chromium-browser': '--incognito',
         'firefox': '--private-window',
         'msedge': '-InPrivate',
         'brave': '--incognito',

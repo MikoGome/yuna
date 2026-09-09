@@ -103,7 +103,9 @@ def open_application(app_name: str, options: list[str] | None = None) -> dict:
 
         elif platform.startswith('linux'):
             if shutil.which('gtk-launch'):
-                res = subprocess.run(['gtk-launch', app_name.lower()] + options, capture_output=True)
+                # gtk-launch only accepts the .desktop ID as its first argument;
+                # extra arguments must be passed after '--'.
+                res = subprocess.run(['gtk-launch', app_name.lower(), '--'] + options, capture_output=True)
                 if res.returncode == 0:
                     return {"success": True, "message": f"Launched '{app_name}' via Linux gtk-launch."}
             

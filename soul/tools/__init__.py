@@ -11,11 +11,17 @@ tools_meta = []
 current_dir = Path(__file__).parent
 
 # Iterate through all .py files in this directory
-for _, module_name, _ in pkgutil.iter_modules([str(current_dir)]):
+for _finder, module_name, _is_pkg in pkgutil.iter_modules([str(current_dir)]):
     
     # 1. Dynamically import the module (e.g., '.web', '.steam')
-    # Using __name__ ensures it resolves the package correctly in __init__.py
-    module = importlib.import_module(f".{module_name}", package=__name__)
+    # Using __name__ ensures it resolves the package correctly in __init__.py.
+    # A single broken module (e.g., a missing optional dependency) should not
+    # take down the entire tool registry.
+    try:
+        module = importlib.import_module(f".{module_name}", package=__name__)
+    except Exception as e:
+        print(f"Warning: failed to load tool module '{module_name}': {e}")
+        continue
     
     # 2. Inspect everything inside the loaded module
     for name, obj in inspect.getmembers(module):
@@ -25,8 +31,13 @@ for _, module_name, _ in pkgutil.iter_modules([str(current_dir)]):
             tools_meta.extend(obj)
             
         # Grab Functions: Find any function that was DEFINED in this module
-        # (The __module__ check prevents grabbing imported functions like 'os' or 'subprocess')
-        elif inspect.isfunction(obj) and obj.__module__ == module.__name__:
+        # (The __module__ check prevents grabbing imported functions like 'os' or 'subprocess'.
+        #  The underscore check skips private helper functions.)
+        elif (
+            inspect.isfunction(obj)
+            and obj.__module__ == module.__name__
+            and not name.startswith("_")
+        ):
             tools[name] = obj
 
 # (Optional) Print to verify it worked during development

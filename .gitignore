@@ -3,3 +3,4 @@ body/vrh-deobfuscator/
 env/
 node_modules/
 __pycache__/
+soul/memory.json

@@ -1,9 +1,5 @@
-import subprocess
-import sys
 import os
 import fnmatch
-import urllib.parse
-import shutil
 
 # def execute_terminal_command(command: str) -> str:
 #     """
@@ -46,11 +42,11 @@ import shutil
 #     except Exception as e:
 #         return f"Failed to execute '{command}'. Error: {str(e)}"
 
-def list_directory(path: str = "/home/miko") -> str:
+def list_directory(path: str = ".") -> str:
     """
     Lists the contents of a specified directory.
     """
-    target_path = os.path.abspath(path)
+    target_path = os.path.abspath(os.path.expanduser(path))
     
     if not os.path.exists(target_path):
         return f"Error: The path '{target_path}' does not exist."
@@ -89,7 +85,7 @@ def find_applications(path: str, iname_pattern: str, file_type: str = "d", max_d
     Behaves similarly to the Unix `find -iname` command but works universally
     on Windows, macOS, and Linux without risking shell execution.
     """
-    target_path = os.path.abspath(path)
+    target_path = os.path.abspath(os.path.expanduser(path))
     
     if not os.path.exists(target_path):
         return f"Error: The path '{target_path}' does not exist."
