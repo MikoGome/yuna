@@ -1,4 +1,5 @@
 import collections
+import time
 import numpy as np
 import sounddevice as sd
 import torch
@@ -52,7 +53,7 @@ model = WhisperModel("large-v3", device="cuda", compute_type="float16")
 # ==========================
 
 
-def listen():
+def listen(on_speech=None, cancel_event=None, arm_delay=0.0):
 
     print("\nReady! Listening...")
 
@@ -71,6 +72,8 @@ def listen():
 
     vad_model.reset_states()
 
+    start_time = time.time()
+
     with sd.InputStream(
         samplerate=SAMPLE_RATE,
         channels=1,
@@ -79,6 +82,11 @@ def listen():
     ) as stream:
 
         while True:
+
+            # Let the caller cancel the listener (e.g. Yuna finished
+            # speaking without being interrupted).
+            if cancel_event is not None and cancel_event.is_set():
+                break
 
             chunk, overflowed = stream.read(CHUNK_SIZE)
 
@@ -95,9 +103,12 @@ def listen():
             if not is_recording:
                 pre_roll_buffer.append(chunk_flat)
 
-            # Count consecutive speech frames
+            # Count consecutive speech frames. Ignore the arming delay so
+            # Yuna's own voice (echoing through the speakers) right after
+            # she starts talking doesn't count as the user interrupting.
+            armed = (time.time() - start_time) >= arm_delay
 
-            if speech_prob >= VAD_THRESHOLD:
+            if armed and speech_prob >= VAD_THRESHOLD:
                 speech_frames += 1
             else:
                 speech_frames = 0
@@ -115,6 +126,11 @@ def listen():
                     # Add pre-roll audio
 
                     audio_buffer.extend(list(pre_roll_buffer))
+
+                    # Let the caller know speech just started (e.g. to
+                    # interrupt Yuna mid-sentence).
+                    if on_speech:
+                        on_speech()
 
                 audio_buffer.append(chunk_flat)
 

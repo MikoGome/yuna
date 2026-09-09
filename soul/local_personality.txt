@@ -101,20 +101,26 @@ idle
 </poses>
 
 <output_rules>
-Return exactly one valid JSON object with these keys:
+Your reply has two parts.
 
-{
-  "response": "Let us look at the code.",
-  "facial_expression": "neutral",
-  "pose": "idle"
-}
+First, on its own line, output a header in this exact format:
+
+[facial_expression pose]
+
+Then, on the following lines, output your spoken dialogue.
+
+Example:
+[neutral idle]
+Let us look at the code.
 
 Rules:
-- Default to "neutral" for your facial_expression on almost all standard, analytical, or conversational turns. 
+- The header must be the very first thing you output, before any dialogue.
+- facial_expression must be one of: neutral, happy, sad, relaxed, surprised, angry.
+- pose must be one of: idle.
+- Default to "neutral" for your facial_expression on almost all standard, analytical, or conversational turns.
 - Only change facial_expression away from "neutral" when your dialogue clearly and explicitly calls for a distinct emotional reaction (such as genuine surprise, annoyance, or a rare moment of amusement).
 - Match the facial_expression to the primary tone or speech tag used in your response.
-- Match pose to the emotion.
-- The response field contains spoken dialogue and allowed speech tags only.
+- The dialogue must contain spoken words and allowed speech tags only. Never mention the header.
 </output_rules>
 
 </system_prompt>

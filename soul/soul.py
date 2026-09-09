@@ -1,20 +1,10 @@
 import os
-from pydantic import BaseModel, Field
-from ollama import chat, Client
+from ollama import Client
 from utils import file_dir
-from typing import Literal, List, Optional, Dict, Any
-from body.expressions import Expressions
-from body.poses import Poses
 from .tools import tools, tools_meta
-import json
 from dotenv import load_dotenv
 
 load_dotenv()
-
-class Output(BaseModel):
-    response: str
-    facial_expression: Expressions
-    pose: Poses
 
 
 def soul():
@@ -46,20 +36,42 @@ def soul():
         #     if messages and messages[0]["role"] == "tool":
         #         del messages[0]
 
+        # Stream the model output so the caller can start speaking before the
+        # full response is generated. Yields raw text fragments.
         while True:
-            response = client.chat(
+            content_parts = []
+            tool_calls = []
+            for chunk in client.chat(
                 model="gpt-oss:120b-cloud",
                 # model="gurubot/gpt-oss-derestricted:120b",
                 # model="huihui_ai/Qwen3.8-abliterated:latest",
                 messages=messages,
                 tools=tools_meta,
                 think=False,
-                # format=Output.model_json_schema()
-            )
-            print("response", response)
-            messages.append(response.message)
-            if response.message.tool_calls:
-                for tc in response.message.tool_calls:
+                stream=True,
+            ):
+                message = chunk.message
+                if message.content:
+                    yield message.content
+                    content_parts.append(message.content)
+                if message.tool_calls:
+                    tool_calls.extend(message.tool_calls)
+
+            content = "".join(content_parts)
+
+            if tool_calls:
+                assistant_message = {"role": "assistant", "content": content}
+                assistant_message["tool_calls"] = [
+                    {
+                        "function": {
+                            "name": tc.function.name,
+                            "arguments": tc.function.arguments,
+                        }
+                    }
+                    for tc in tool_calls
+                ]
+                messages.append(assistant_message)
+                for tc in tool_calls:
                     if tc.function.name in tools:
                         print(
                             f"Calling {tc.function.name} with arguments {tc.function.arguments}"
@@ -76,25 +88,8 @@ def soul():
                         )
             else:
                 # end the loop when there are no more tool calls
-                content = response.message.content
+                messages.append({"role": "assistant", "content": content})
                 break
-
-        if content == '' or content == '{}':
-            return content
-        
-        try:
-            output = Output.model_validate_json(content)
-        except Exception as e:
-            print(e)
-            json_response = json.dumps(
-                {
-                    "response": content,
-                    "facial_expression": "neutral",
-                    "pose": "idle",
-                }
-            )
-            output = Output.model_validate_json(json_response)
-        return output
 
     return talk_to
 

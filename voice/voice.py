@@ -14,12 +14,24 @@ import torch
 import sounddevice as sd
 
 import websocket
+import json
 
 ws = websocket.WebSocket()
 ws.connect("ws://localhost:3000")
 
 # Tell Node this is the audio producer
 ws.send("python")
+
+# Control socket: used to send sentence-by-sentence subtitles to the browser
+control_ws = websocket.WebSocket()
+control_ws.connect("ws://localhost:3001")
+
+# The control socket is shared between the main thread (subtitles) and the
+# background listener thread (stop_audio), so guard it with a lock.
+control_ws_lock = threading.Lock()
+
+# Set when the user interrupts Yuna mid-sentence
+stop_event = threading.Event()
 
 
 def create_wav_file(model, text: str, output_dir: str) -> None:
@@ -148,12 +160,30 @@ def stream_audio_to_server(model, text: str) -> None:
         if not sentence.strip():
             continue
 
+        # Stop early if the user interrupted
+        if stop_event.is_set():
+            print("Interrupted")
+            return
+
         print(f"Generating: {sentence}")
+
+        # Tell the browser which sentence is about to be spoken so the
+        # subtitle can be shown in sync with this sentence's audio.
+        try:
+            with control_ws_lock:
+                control_ws.send(json.dumps({"type": "subtitle", "text": sentence}))
+        except Exception as e:
+            print(f"Failed to send subtitle: {e}")
 
         wav = model.generate(
             sentence,
             audio_prompt_path="./voice/voice.wav",
         )
+
+        # Stop early if the user interrupted during generation
+        if stop_event.is_set():
+            print("Interrupted")
+            return
 
         # wav shape: [1, samples]
         audio_np = wav.squeeze().cpu().numpy()
@@ -167,6 +197,10 @@ def stream_audio_to_server(model, text: str) -> None:
         chunk_size = 4096
 
         for i in range(0, len(audio_pcm), chunk_size):
+            # Stop early if the user interrupted
+            if stop_event.is_set():
+                print("Interrupted")
+                return
 
             chunk = audio_pcm[i : i + chunk_size]
 
@@ -176,8 +210,25 @@ def stream_audio_to_server(model, text: str) -> None:
 
 
 def speak(text: str) -> None:
-    voice_path = os.path.join(file_dir(__file__), "voice.wav")
+    """
+    Synthesize a single sentence and stream the audio to the server. The
+    caller is responsible for splitting the response into sentences so that
+    audio can start as soon as the first sentence is available.
+    """
     stream_audio_to_server(model, normalize_tts(text))
+
+
+def stop_speaking() -> None:
+    """
+    Interrupt Yuna mid-sentence: stop streaming audio and tell the browser
+    to stop playing whatever is currently scheduled.
+    """
+    stop_event.set()
+    try:
+        with control_ws_lock:
+            control_ws.send(json.dumps({"type": "stop_audio"}))
+    except Exception as e:
+        print(f"Failed to send stop_audio: {e}")
 
 
 if __name__ == "__main__":

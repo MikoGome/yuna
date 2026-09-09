@@ -143,10 +143,55 @@ controlSocket.onopen = () => {
 
 controlSocket.onmessage = (event) => {
   console.log("received:", event.data);
-  const {facial_expression, response} = JSON.parse(event.data);
+  const data = JSON.parse(event.data);
+
+  // Sentence-by-sentence subtitle, timed to when its audio starts
+  if (data.type === "subtitle") {
+    queueSubtitle(data.text);
+    return;
+  }
+
+  // User started talking: stop Yuna's audio immediately
+  if (data.type === "stop_audio") {
+    stopAudio();
+    return;
+  }
+
+  const { facial_expression, response } = data;
   character.setExpression(facial_expression.toLowerCase());
-  displaySubtitles(response)
+
+  // Fallback: if no sentence subtitles were queued for this turn, display
+  // the full response instead.
+  if (!subtitlesQueued) {
+    displaySubtitles(response);
+  }
+  subtitlesQueued = false;
 };
+
+// ========================
+// SUBTITLES (SYNCED WITH AUDIO)
+// ========================
+
+// Each subtitle is queued with the audioContext time at which its
+// sentence's audio starts playing, and shown at exactly that moment.
+const subtitleQueue = [];
+let subtitlesQueued = false;
+
+function queueSubtitle(text) {
+  // The sentence's audio chunks are sent right after this message, so
+  // nextAudioTime is exactly when this sentence will start playing.
+  const startTime = Math.max(nextAudioTime, audioContext.currentTime);
+  subtitleQueue.push({ text, startTime });
+  subtitlesQueued = true;
+}
+
+function updateSubtitles() {
+  const now = audioContext.currentTime;
+  while (subtitleQueue.length && subtitleQueue[0].startTime <= now) {
+    const { text } = subtitleQueue.shift();
+    displaySubtitles(text);
+  }
+}
 
 function displaySubtitles(text) {
   const subHolder = document.querySelector("#subtitles")
@@ -249,6 +294,10 @@ loader.load(
 // AUDIO PLAYBACK
 // ========================
 
+// Sources currently playing (or scheduled to play) so we can stop them
+// immediately when the user interrupts.
+const activeSources = new Set();
+
 function playChunk(pcm) {
   const float32 = new Float32Array(pcm.length);
 
@@ -269,6 +318,28 @@ function playChunk(pcm) {
 
   source.start(nextAudioTime);
   nextAudioTime += buffer.duration;
+
+  activeSources.add(source);
+  source.onended = () => activeSources.delete(source);
+}
+
+// Stop all current and scheduled audio playback (used for interruption).
+function stopAudio() {
+  for (const source of activeSources) {
+    try {
+      source.stop();
+    } catch (e) {
+      // Already stopped
+    }
+  }
+  activeSources.clear();
+
+  // Drop any subtitles that were queued but not yet shown
+  subtitleQueue.length = 0;
+
+  // Reschedule future chunks from "now" so the next sentence starts
+  // immediately instead of after the old (now cancelled) timeline.
+  nextAudioTime = audioContext.currentTime;
 }
 
 // ========================
@@ -336,6 +407,9 @@ function animate() {
     if (mixer) {
       mixer.update(delta);
     }
+
+    // Show the next subtitle at the exact moment its audio starts
+    updateSubtitles();
 
     // Advanced Multi-Band Frequency Audio Analysis for Visemes
     const frequencyData = new Uint8Array(analyser.frequencyBinCount);

@@ -1,5 +1,5 @@
 .env
-body/vrh-deobfuscator
+body/vrh-deobfuscator/
 env/
-**/node_modules/
-**/__pycache__/
+node_modules/
+__pycache__/
