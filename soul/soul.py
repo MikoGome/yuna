@@ -2,6 +2,7 @@ import os
 from ollama import Client
 from utils import file_dir
 from .tools import tools, tools_meta
+from . import rag
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -9,7 +10,7 @@ load_dotenv()
 
 def soul():
     dir = file_dir(__file__)
-    with open(os.path.join(dir, "local_personality.txt"), "r") as file:
+    with open(os.path.join(dir, "personality.txt"), "r") as file:
         prompt = file.read()
     KEY = os.getenv("MIKO_KEY")
     # KEY = os.getenv("MICHAEL_KEY")
@@ -27,6 +28,25 @@ def soul():
     ]
 
     def talk_to(text: str):
+        # --- RAG: retrieve relevant long-term memories for this turn and
+        # inject them into the system prompt so the model references them
+        # automatically, without having to call the memory tool. ---
+        try:
+            relevant = rag.retrieve(text, top_k=5)
+        except Exception as e:
+            print(f"[RAG] retrieval failed: {e}")
+            relevant = []
+        if relevant:
+            memory_block = (
+                "\n\n<long_term_memory>\n"
+                + rag.format_memories(relevant)
+                + "\n</long_term_memory>"
+            )
+            print(f"[RAG] injected {len(relevant)} memories")
+        else:
+            memory_block = ""
+        messages[0]["content"] = prompt + memory_block
+
         messages.append({"role": "user", "content": text})
 
         # while len(messages) > 15:

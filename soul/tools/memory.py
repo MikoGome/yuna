@@ -1,9 +1,9 @@
 import os
 import json
-import re
 import datetime
 
 from utils import file_dir
+from .. import rag
 
 # Store memories next to the personality files (soul/memory.json)
 MEMORY_FILE = os.path.join(file_dir(__file__), "..", "memory.json")
@@ -28,12 +28,6 @@ def _save_memories(memories: list) -> None:
 def _next_id(memories: list) -> int:
     """Return the next available integer id."""
     return max((m.get("id", 0) for m in memories), default=0) + 1
-
-
-def _score(memory: dict, query_words: list) -> int:
-    """Score a memory by how many query words appear in it (case-insensitive)."""
-    haystack = f"{memory.get('text', '')} {memory.get('category', '')}".lower()
-    return sum(1 for word in query_words if word in haystack)
 
 
 def manage_memory(
@@ -79,24 +73,17 @@ def manage_memory(
         return f"Saved memory #{entry['id']} ({entry['category']}): {entry['text']}"
 
     # ------------------------------------------------------------------
-    # RECALL: find memories matching the query
+    # RECALL: find memories matching the query (via RAG)
     # ------------------------------------------------------------------
     if action == "recall":
         if not memories:
             return "No memories stored yet."
 
-        query_words = [w for w in re.split(r"\W+", query.lower()) if len(w) > 2]
-
-        if not query_words:
+        if not query.strip():
             # No usable query: return the most recent few memories
             matches = memories[-5:]
         else:
-            scored = [
-                (score, m) for m in memories
-                if (score := _score(m, query_words)) > 0
-            ]
-            scored.sort(key=lambda pair: pair[0], reverse=True)
-            matches = [m for _, m in scored[:5]]
+            matches = rag.retrieve(query, top_k=5)
 
         if not matches:
             return f"No memories found matching '{query}'."
