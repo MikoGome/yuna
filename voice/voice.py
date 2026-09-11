@@ -231,5 +231,17 @@ def stop_speaking() -> None:
         print(f"Failed to send stop_audio: {e}")
 
 
+def send_status(text: str) -> None:
+    """
+    Send a status message to the browser (e.g., 'Thinking...') so the user
+    knows Yuna is working on something.
+    """
+    try:
+        with control_ws_lock:
+            control_ws.send(json.dumps({"type": "status", "text": text}))
+    except Exception as e:
+        print(f"Failed to send status: {e}")
+
+
 if __name__ == "__main__":
     speak("Testing")

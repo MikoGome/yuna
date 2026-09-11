@@ -91,6 +91,8 @@ def soul():
                     for tc in tool_calls
                 ]
                 messages.append(assistant_message)
+                # Notify the user that Yuna is thinking (tool execution can take a while)
+                yield "__STATUS__:Thinking..."
                 for tc in tool_calls:
                     if tc.function.name in tools:
                         print(

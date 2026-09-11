@@ -1,5 +1,5 @@
 from ollama import chat
-from voice.voice import speak, stop_speaking, stop_event
+from voice.voice import speak, stop_speaking, stop_event, send_status
 from soul.soul import soul
 from body.warudo_sender import send_expression, send_animation
 from senses.hearing.hearing import listen
@@ -66,29 +66,34 @@ def main():
         # --- Background listener for mid-sentence interruption ---
         cancel_event = threading.Event()
         interrupted_content = [None]
-        listener_started = [False]
         listener_thread = [None]
 
         def on_speech():
             stop_speaking()
 
         def background_listen():
-            result = listen(
-                on_speech=on_speech,
-                cancel_event=cancel_event,
-                arm_delay=1.0,
-            )
-            interrupted_content[0] = result
+            try:
+                result = listen(
+                    on_speech=on_speech,
+                    cancel_event=cancel_event,
+                    arm_delay=1.0,
+                )
+                interrupted_content[0] = result
+            except Exception as e:
+                print(f"[Listener error] {e}")
 
         def start_listener():
-            if not listener_started[0]:
-                listener_started[0] = True
+            if listener_thread[0] is None or not listener_thread[0].is_alive():
                 listener_thread[0] = threading.Thread(
                     target=background_listen, daemon=True
                 )
                 listener_thread[0].start()
 
         for fragment in talk_to(content):
+            # Handle status markers (tool execution in progress)
+            if fragment.startswith("__STATUS__:"):
+                send_status(fragment[len("__STATUS__:"):])
+                continue
             buffer += fragment
 
             # The model starts with a "[facial_expression pose]" header line.
@@ -96,7 +101,7 @@ def main():
             # never spoken. If the first line isn't a header, the model
             # skipped it and we treat everything as dialogue.
             if not header_parsed:
-                match = re.match(r"^\s*\[([a-zA-Z]+)\s+([a-zA-Z]+)\]\s*", buffer)
+                match = re.match(r"^\s*\[([a-zA-Z_]+)\s+([a-zA-Z_]+)\]\s*", buffer)
                 if match:
                     facial_expression = match.group(1).lower()
                     pose = match.group(2).lower()

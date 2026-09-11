@@ -157,8 +157,19 @@ controlSocket.onmessage = (event) => {
     return;
   }
 
-  const { facial_expression, response } = data;
+  // Yuna is thinking (tool execution in progress)
+  if (data.type === "status") {
+    displayStatus(data.text);
+    return;
+  }
+
+  const { facial_expression, response, pose } = data;
   character.setExpression(facial_expression.toLowerCase());
+
+  // Switch body pose (e.g. "thinking", "happy") with a smooth crossfade
+  if (pose) {
+    playPose(pose.toLowerCase());
+  }
 
   // Fallback: if no sentence subtitles were queued for this turn, display
   // the full response instead.
@@ -176,6 +187,12 @@ controlSocket.onmessage = (event) => {
 // sentence's audio starts playing, and shown at exactly that moment.
 const subtitleQueue = [];
 let subtitlesQueued = false;
+
+// Whether a spoken subtitle is currently on screen, and when it was shown.
+// Used to fade the subtitle out a few seconds after Yuna finishes speaking.
+let subtitleVisible = false;
+let subtitleShownAt = 0;
+const SUBTITLE_FADE_DELAY = 2.0; // seconds after the last audio ends
 
 function queueSubtitle(text) {
   // The sentence's audio chunks are sent right after this message, so
@@ -201,6 +218,33 @@ function displaySubtitles(text) {
   const sub = document.createElement("p");
   sub.innerText = text;
   subHolder.appendChild(sub);
+  subtitleVisible = true;
+  subtitleShownAt = audioContext.currentTime;
+}
+
+function displayStatus(text) {
+  const subHolder = document.querySelector("#subtitles");
+  while (subHolder.hasChildNodes()) {
+    subHolder.removeChild(subHolder.firstChild);
+  }
+  const sub = document.createElement("p");
+  sub.classList.add("status");
+  sub.innerText = text;
+  subHolder.appendChild(sub);
+  // The status is not spoken dialogue; it is replaced by the next subtitle.
+  subtitleVisible = false;
+}
+
+// Fade out and clear the current subtitle.
+function hideSubtitles() {
+  const subHolder = document.querySelector("#subtitles");
+  const sub = subHolder.querySelector("p");
+  if (sub) {
+    sub.classList.add("fade-out");
+    setTimeout(() => {
+      subHolder.innerHTML = "";
+    }, 500);
+  }
 }
 
 // ========================
@@ -244,6 +288,39 @@ window.addEventListener("keydown", (event) => {
 let currentVrm = undefined;
 let mixer = undefined;
 
+// ========================
+// POSES (FBX ANIMATIONS)
+// ========================
+
+const POSES = [
+  "idle",
+  "happy",
+  "excited",
+  "angry",
+  "thinking",
+  "thankful",
+  "rejected",
+  "terrified",
+  "yawn",
+  "standing_greeting",
+  "idletofight",
+];
+
+const poseActions = {};
+let currentPoseAction = null;
+
+// Crossfade from the current pose to the requested one. Falls back to
+// idle if the requested pose failed to load.
+function playPose(name) {
+  const action = poseActions[name] || poseActions.idle;
+  if (!action || action === currentPoseAction) return;
+  action.reset().play();
+  if (currentPoseAction) {
+    currentPoseAction.crossFadeTo(action, 0.4, false);
+  }
+  currentPoseAction = action;
+}
+
 const loader = new GLTFLoader();
 loader.crossOrigin = "anonymous";
 loader.register((parser) => {
@@ -271,15 +348,36 @@ loader.load(
       vrm.lookAt.target = lookAtTarget;
     }
 
+    // Load and retarget every pose, then start with idle.
     const fbxLoader = new FBXLoader();
-    fbxLoader.load("public/animations/idle.fbx", (fbx) => {
-      const clip = retargetAnimation(fbx, vrm);
-      if (clip) {
-        const action = mixer.clipAction(clip);
-        action.play();
-      }
+    let loadedPoses = 0;
+
+    const finishLoadingPoses = () => {
+      loadedPoses++;
+      if (loadedPoses < POSES.length) return;
+      playPose("idle");
       scene.add(vrm.scene);
-    });
+    };
+
+    for (const pose of POSES) {
+      fbxLoader.load(
+        `public/animations/${pose}.fbx`,
+        (fbx) => {
+          const clip = retargetAnimation(fbx, vrm);
+          if (clip) {
+            poseActions[pose] = mixer.clipAction(clip);
+          } else {
+            console.warn(`Pose retarget failed: ${pose}`);
+          }
+          finishLoadingPoses();
+        },
+        undefined,
+        (error) => {
+          console.error(`Failed to load pose ${pose}`, error);
+          finishLoadingPoses();
+        },
+      );
+    }
   },
   (progress) =>
     console.log(
@@ -410,6 +508,17 @@ function animate() {
 
     // Show the next subtitle at the exact moment its audio starts
     updateSubtitles();
+
+    // Fade out the subtitle a few seconds after Yuna finishes speaking.
+    // nextAudioTime is when the last audio chunk ends; subtitleShownAt covers
+    // the case where a subtitle is shown without audio.
+    if (subtitleVisible) {
+      const referenceTime = Math.max(nextAudioTime, subtitleShownAt);
+      if (audioContext.currentTime > referenceTime + SUBTITLE_FADE_DELAY) {
+        hideSubtitles();
+        subtitleVisible = false;
+      }
+    }
 
     // Advanced Multi-Band Frequency Audio Analysis for Visemes
     const frequencyData = new Uint8Array(analyser.frequencyBinCount);

@@ -2,31 +2,74 @@ body {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
+  overflow: hidden;
+  background: #000000;
 }
 
 canvas {
   display: block;
 }
 
-div {
+#subtitles {
   position: absolute;
-  bottom: 0;
+  bottom: 48px;
   left: 50%;
   transform: translateX(-50%);
+  width: max-content;
+  max-width: 80vw;
+  pointer-events: none;
 }
 
 #subtitles p {
+  margin: 0;
+  padding: 0.6rem 1.5rem;
   color: #ffffff;
-  /* Layers shadows: top, right, bottom, left, and the 4 diagonal corners */
-  text-shadow: 
-    -1px -1px 0 #000000,  
-     1px -1px 0 #000000,
-    -1px  1px 0 #000000,
-     1px  1px 0 #000000,
-    -1px  0px 0 #000000,
-     1px  0px 0 #000000,
-     0px -1px 0 #000000,
-     0px  1px 0 #000000;
-  font-size: 2rem;
+  font-family: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif;
+  font-size: 1.5rem;
+  font-weight: 500;
+  line-height: 1.45;
+  letter-spacing: 0.02em;
   text-align: center;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+  background: rgba(10, 10, 14, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  animation: subtitle-in 0.25s ease-out;
+}
+
+/* Status messages (e.g. "Thinking...") are dimmer and smaller */
+#subtitles p.status {
+  font-size: 1.2rem;
+  font-style: italic;
+  opacity: 0.75;
+}
+
+@keyframes subtitle-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Fade out when Yuna finishes speaking */
+#subtitles p.fade-out {
+  animation: subtitle-out 0.5s ease-in forwards;
+}
+
+@keyframes subtitle-out {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(10px);
+  }
 }
