@@ -1,12 +1,22 @@
 from ollama import chat
-from voice.voice import speak, stop_speaking, stop_event, send_status
+from voice.voice import speak, stop_speaking, stop_event, send_status, get_mode, speaking_event, wait_for_playback_end
 from soul.soul import soul
 from body.warudo_sender import send_expression, send_animation
 from senses.hearing.hearing import listen
 import re
 import json
+import random
 import threading
 from body.move import send_json
+
+# Prompt used to nudge Yuna into starting a conversation in companion mode.
+# She may reply with the single word "skip" to stay quiet.
+PROACTIVE_PROMPT = (
+    "Companion mode: Master has been quiet for a while. If you feel like saying "
+    "something to keep the conversation going, say it naturally and keep it brief. "
+    "If you don't have anything worth saying right now, output the single word "
+    "skip after your header line and nothing else."
+)
 
 def main():
     talk_to = soul()
@@ -32,15 +42,56 @@ def main():
         "sarcastic"
     ]
     is_activated = False
-    activation_phrases = ["yuna", "ina", "una", "you know"]
+    activation_phrases = ["yuna", "yina", "ina", "una", "you know"]
     deactivation_phrases = ["thank you", "thanks"]
     pending_content = None
+    consecutive_proactive = 0
     while True:
+        mode = get_mode()
+
         if pending_content is not None:
             content = pending_content
             pending_content = None
+            is_proactive = False
         else:
-            content = listen()
+            # Listen for the user. In companion mode, also arm an idle timer
+            # so Yuna can proactively start a conversation after a lull.
+            listen_cancel = threading.Event()
+            proactive_fired = threading.Event()
+            idle_timer = None
+
+            if mode == "companion":
+                # Base idle window, lengthened if Yuna has been proactive
+                # several times in a row so she doesn't dominate.
+                base = random.uniform(45, 90)
+                idle_timeout = base + max(0, consecutive_proactive - 1) * 30
+
+                def on_idle(pf=proactive_fired, lc=listen_cancel):
+                    pf.set()
+                    lc.set()
+
+                idle_timer = threading.Timer(idle_timeout, on_idle)
+                idle_timer.daemon = True
+                idle_timer.start()
+
+            content = listen(cancel_event=listen_cancel)
+
+            if idle_timer is not None:
+                idle_timer.cancel()
+
+            # If the idle timer fired and the user didn't actually speak,
+            # Yuna proactively starts the conversation.
+            if proactive_fired.is_set() and len(content.strip()) == 0:
+                content = PROACTIVE_PROMPT
+                is_proactive = True
+            else:
+                is_proactive = False
+
+        if is_proactive:
+            consecutive_proactive += 1
+        else:
+            consecutive_proactive = 0
+
         # content = input("You: ")
         if len(content) == 0:
             continue
@@ -48,12 +99,51 @@ def main():
         if content.strip().lower() == "shut down." or content.strip().lower() == "shut down":
             speak("Shutting Down...")
             break
-        if any(content.strip().lower().startswith(word.strip().lower()) for word in activation_phrases):
-            is_activated = True
-        elif not is_activated:
+
+        # In companion mode Yuna is always engaged, so the activation phrase
+        # is only required in assistant mode.
+        if not is_proactive and mode == "assistant":
+            if any(content.strip().lower().startswith(word.strip().lower()) for word in activation_phrases):
+                is_activated = True
+            elif not is_activated:
+                continue
+            elif any(content.strip().lower().startswith(word.strip().lower()) for word in deactivation_phrases):
+                is_activated = False
+
+        # --- Proactive turn: collect the full response first so we can tell
+        # whether Yuna wants to speak or stay quiet. ---
+        if is_proactive:
+            raw = ""
+            for fragment in talk_to(content):
+                if fragment.startswith("__STATUS__:"):
+                    send_status(fragment[len("__STATUS__:"):])
+                    continue
+                raw += fragment
+
+            facial_expression = "neutral"
+            pose = "idle"
+            match = re.match(r"^\s*\[([a-zA-Z_]+)\s+([a-zA-Z_]+)\]\s*", raw)
+            if match:
+                facial_expression = match.group(1).lower()
+                pose = match.group(2).lower()
+                raw = raw[match.end():]
+
+            dialogue = raw.strip()
+            if dialogue.lower() in ("skip", "[skip]", ""):
+                print("[Proactive] Yuna stays quiet")
+                continue
+
+            full_response = dialogue
+            reply = filter_paralinguistic_tags(dialogue, paralinguistic_tags)
+            print(reply)
+            speak(reply)
+
+            send_json({
+                "response": full_response,
+                "facial_expression": facial_expression,
+                "pose": pose
+            })
             continue
-        elif any(content.strip().lower().startswith(word.strip().lower()) for word in deactivation_phrases):
-            is_activated = False
 
         # Stream the model response and start speaking as soon as each
         # sentence is complete, instead of waiting for the full text.
@@ -69,7 +159,8 @@ def main():
         listener_thread = [None]
 
         def on_speech():
-            stop_speaking()
+            if speaking_event.is_set():
+                stop_speaking()
 
         def background_listen():
             try:
@@ -138,6 +229,13 @@ def main():
             start_listener()
             speak(reply)
 
+        # Streaming is done, but the browser may still be playing the last
+        # sentence. Wait until playback actually ends (the browser reports
+        # this over the control socket) so an interruption during that tail
+        # is still caught. The timeout is a safety net for a stuck browser.
+        if not stop_event.is_set():
+            wait_for_playback_end()
+
         # --- Handle interruption ---
         if stop_event.is_set():
             # Wait for the background listener to finish transcribing the
@@ -154,6 +252,13 @@ def main():
         cancel_event.set()
         if listener_thread[0] is not None:
             listener_thread[0].join()
+
+        # The user may have started speaking in the moment between playback
+        # ending and the listener being cancelled; don't lose it.
+        if interrupted_content[0]:
+            pending_content = interrupted_content[0]
+            print(f"[Late speech] User said: {pending_content}")
+            continue
 
         full_response = full_response.strip()
         if not full_response:

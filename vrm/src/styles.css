@@ -73,3 +73,40 @@ canvas {
     transform: translateY(10px);
   }
 }
+
+/* Mode toggle button (top-left corner) */
+#mode-toggle {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  z-index: 10;
+  padding: 0.5rem 1.1rem;
+  font-family: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif;
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: #ffffff;
+  background: rgba(10, 10, 14, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 999px;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+#mode-toggle:hover {
+  background: rgba(30, 30, 40, 0.7);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+#mode-toggle.companion {
+  color: #0b0b0e;
+  background: rgba(120, 200, 255, 0.85);
+  border-color: rgba(120, 200, 255, 0.9);
+}
+
+#mode-toggle.companion:hover {
+  background: rgba(140, 210, 255, 0.95);
+}

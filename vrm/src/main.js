@@ -180,6 +180,22 @@ controlSocket.onmessage = (event) => {
 };
 
 // ========================
+// MODE TOGGLE (assistant / companion)
+// ========================
+const modeToggle = document.querySelector("#mode-toggle");
+let currentMode = "assistant";
+
+modeToggle.addEventListener("click", () => {
+  currentMode = currentMode === "assistant" ? "companion" : "assistant";
+  modeToggle.textContent =
+    currentMode === "assistant" ? "Assistant" : "Companion";
+  modeToggle.classList.toggle("companion", currentMode === "companion");
+  if (controlSocket.readyState === WebSocket.OPEN) {
+    controlSocket.send(JSON.stringify({ type: "mode", mode: currentMode }));
+  }
+});
+
+// ========================
 // SUBTITLES (SYNCED WITH AUDIO)
 // ========================
 
@@ -192,7 +208,7 @@ let subtitlesQueued = false;
 // Used to fade the subtitle out a few seconds after Yuna finishes speaking.
 let subtitleVisible = false;
 let subtitleShownAt = 0;
-const SUBTITLE_FADE_DELAY = 2.0; // seconds after the last audio ends
+const SUBTITLE_FADE_DELAY = 1.0; // seconds after the last audio ends
 
 function queueSubtitle(text) {
   // The sentence's audio chunks are sent right after this message, so
@@ -396,6 +412,20 @@ loader.load(
 // immediately when the user interrupts.
 const activeSources = new Set();
 
+// Whether we have told Python that audio is currently playing. The browser
+// may keep playing after Python finished streaming, so Python relies on
+// this to know when Yuna is actually audible (for interruption gating).
+let playbackReported = false;
+
+function updatePlaybackState() {
+  const playing = activeSources.size > 0;
+  if (playing === playbackReported) return;
+  playbackReported = playing;
+  if (controlSocket.readyState === WebSocket.OPEN) {
+    controlSocket.send(JSON.stringify({ type: "playing", playing }));
+  }
+}
+
 function playChunk(pcm) {
   const float32 = new Float32Array(pcm.length);
 
@@ -418,7 +448,11 @@ function playChunk(pcm) {
   nextAudioTime += buffer.duration;
 
   activeSources.add(source);
-  source.onended = () => activeSources.delete(source);
+  source.onended = () => {
+    activeSources.delete(source);
+    updatePlaybackState();
+  };
+  updatePlaybackState();
 }
 
 // Stop all current and scheduled audio playback (used for interruption).
@@ -431,6 +465,7 @@ function stopAudio() {
     }
   }
   activeSources.clear();
+  updatePlaybackState();
 
   // Drop any subtitles that were queued but not yet shown
   subtitleQueue.length = 0;
@@ -508,6 +543,10 @@ function animate() {
 
     // Show the next subtitle at the exact moment its audio starts
     updateSubtitles();
+
+    // Tell Python when playback actually ends (covers the case where the
+    // last source finishes between frames).
+    updatePlaybackState();
 
     // Fade out the subtitle a few seconds after Yuna finishes speaking.
     // nextAudioTime is when the last audio chunk ends; subtitleShownAt covers

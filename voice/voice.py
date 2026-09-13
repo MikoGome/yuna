@@ -33,6 +33,13 @@ control_ws_lock = threading.Lock()
 # Set when the user interrupts Yuna mid-sentence
 stop_event = threading.Event()
 
+# Set while the browser is actually playing Yuna's audio. The browser
+# reports playback state over the control socket, which covers the tail
+# where audio is still playing after streaming has finished. Used to gate
+# mid-sentence interruption so noise while she is silent doesn't trigger
+# a false interrupt.
+speaking_event = threading.Event()
+
 
 def create_wav_file(model, text: str, output_dir: str) -> None:
     # 1. Split the text into sentences (looks for ., !, or ? followed by a space)
@@ -167,8 +174,8 @@ def stream_audio_to_server(model, text: str) -> None:
 
         print(f"Generating: {sentence}")
 
-        # Tell the browser which sentence is about to be spoken so the
-        # subtitle can be shown in sync with this sentence's audio.
+        # Subtitle shows the original text (e.g. "7:08 PM");
+        # TTS gets the normalized form (e.g. "seven oh eight P M").
         try:
             with control_ws_lock:
                 control_ws.send(json.dumps({"type": "subtitle", "text": sentence}))
@@ -176,7 +183,7 @@ def stream_audio_to_server(model, text: str) -> None:
             print(f"Failed to send subtitle: {e}")
 
         wav = model.generate(
-            sentence,
+            normalize_tts(sentence),
             audio_prompt_path="./voice/voice.wav",
         )
 
@@ -215,7 +222,7 @@ def speak(text: str) -> None:
     caller is responsible for splitting the response into sentences so that
     audio can start as soon as the first sentence is available.
     """
-    stream_audio_to_server(model, normalize_tts(text))
+    stream_audio_to_server(model, text)
 
 
 def stop_speaking() -> None:
@@ -231,6 +238,42 @@ def stop_speaking() -> None:
         print(f"Failed to send stop_audio: {e}")
 
 
+def wait_for_playback_end(timeout: float = 60.0) -> None:
+    """
+    Block until the browser reports that Yuna's audio has finished playing.
+
+    Streaming (stream_audio_to_server) can complete before the browser has
+    finished playing the last sentence, so the main loop must wait for the
+    browser's "playing: false" report before closing the turn. Otherwise an
+    interruption during that tail is missed and the user's speech is picked
+    up as a brand-new turn.
+
+    The browser may not have *started* playing the last sentence yet when
+    streaming finishes, so first give it a short grace period to begin
+    (setting speaking_event), then wait for it to end. A plain
+    speaking_event.wait() is not enough: it returns immediately if the event
+    is not set at that instant, which is exactly the case right after the
+    last chunk is sent.
+    """
+    deadline = time.time() + timeout
+
+    # Grace period for the browser to start playing the last sentence.
+    grace_deadline = time.time() + 1.0
+    while not speaking_event.is_set() and time.time() < grace_deadline:
+        if stop_event.is_set():
+            return
+        time.sleep(0.05)
+
+    # Now wait for playback to actually end.
+    while speaking_event.is_set():
+        if stop_event.is_set():
+            return
+        if time.time() > deadline:
+            print("[Playback] timeout waiting for playback to end")
+            return
+        time.sleep(0.05)
+
+
 def send_status(text: str) -> None:
     """
     Send a status message to the browser (e.g., 'Thinking...') so the user
@@ -241,6 +284,52 @@ def send_status(text: str) -> None:
             control_ws.send(json.dumps({"type": "status", "text": text}))
     except Exception as e:
         print(f"Failed to send status: {e}")
+
+
+# ========================
+# MODE (assistant / companion)
+# ========================
+
+current_mode = "assistant"
+_mode_lock = threading.Lock()
+
+
+def get_mode() -> str:
+    with _mode_lock:
+        return current_mode
+
+
+def _control_listener():
+    """Background thread that reads control messages from the browser and
+    updates the current mode when the user toggles it."""
+    global current_mode
+    while True:
+        try:
+            data = control_ws.recv()
+            try:
+                msg = json.loads(data)
+            except (ValueError, TypeError):
+                continue
+            if msg.get("type") == "mode":
+                new_mode = msg.get("mode", "assistant")
+                with _mode_lock:
+                    current_mode = new_mode
+                print(f"[Mode] switched to {new_mode}")
+            elif msg.get("type") == "playing":
+                # The browser reports when Yuna's audio is actually playing.
+                # This outlives stream_audio_to_server: the browser keeps
+                # playing the last sentence after streaming is done.
+                if msg.get("playing"):
+                    speaking_event.set()
+                else:
+                    speaking_event.clear()
+        except Exception as e:
+            print(f"[Control listener] {e}")
+            time.sleep(1)
+
+
+_control_thread = threading.Thread(target=_control_listener, daemon=True)
+_control_thread.start()
 
 
 if __name__ == "__main__":
